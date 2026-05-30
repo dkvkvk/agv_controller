@@ -76,20 +76,20 @@ jobs:
       - name: Patch Third-Party Dependencies and Compatibility
         run: |
           python3 << 'PYEOF'
-          import os, glob
+          import os, glob, re
 
-          # 1. Patch gradle.properties to opt out of newDsl and builtInKotlin
+          # ── 1. Patch gradle.properties ──
           properties_path = 'android/gradle.properties'
           if os.path.exists(properties_path):
               with open(properties_path, 'r') as f:
                   props = f.read()
-              
+
               new_props = props
               if 'android.newDsl' not in props:
                   new_props += '\nandroid.newDsl=false\n'
               if 'android.builtInKotlin' not in props:
                   new_props += 'android.builtInKotlin=false\n'
-                  
+
               if new_props != props:
                   with open(properties_path, 'w') as f:
                       f.write(new_props)
@@ -97,11 +97,29 @@ jobs:
           else:
               print(f"⚠️ {properties_path} not found")
 
-          # 2. Search for and patch flutter_bluetooth_serial in the pub cache
+          # ── 2. Bump compileSdk / targetSdk in the app's own build.gradle(.kts) ──
+          for name in ['build.gradle', 'build.gradle.kts']:
+              app_gradle = os.path.join('android', 'app', name)
+              if os.path.exists(app_gradle):
+                  with open(app_gradle, 'r') as f:
+                      text = f.read()
+                  original = text
+                  # compileSdk / compileSdkVersion → 34
+                  text = re.sub(r'compileSdk\w*\s*[=:]\s*\d+', lambda m: re.sub(r'\d+', '34', m.group()), text)
+                  text = re.sub(r"flutter\.compileSdkVersion", "34", text)
+                  # targetSdk / targetSdkVersion → 34
+                  text = re.sub(r'targetSdk\w*\s*[=:]\s*\d+', lambda m: re.sub(r'\d+', '34', m.group()), text)
+                  text = re.sub(r"flutter\.targetSdkVersion", "34", text)
+                  if text != original:
+                      with open(app_gradle, 'w') as f:
+                          f.write(text)
+                      print(f"✅ Patched {app_gradle} — compileSdk=34, targetSdk=34")
+
+          # ── 3. Patch flutter_bluetooth_serial in the pub cache ──
           home_dir = os.path.expanduser('~')
           search_pattern = os.path.join(home_dir, '.pub-cache', 'hosted', '**', 'flutter_bluetooth_serial-*', 'android', 'build.gradle')
           cache_files = glob.glob(search_pattern, recursive=True)
-          
+
           if not cache_files:
               print("⚠️ flutter_bluetooth_serial not found in pub cache. Searching all of .pub-cache...")
               search_pattern_fallback = os.path.join(home_dir, '.pub-cache', '**', 'flutter_bluetooth_serial-*', 'android', 'build.gradle')
@@ -114,21 +132,35 @@ jobs:
                   print(f"🔍 Found plugin build.gradle: {path}")
                   with open(path, 'r') as f:
                       text = f.read()
-                  
+
                   modified = False
-                  
+
                   # Replace jcenter() with mavenCentral()
                   if 'jcenter()' in text:
                       text = text.replace('jcenter()', 'mavenCentral()')
                       print("   ✅ Replaced jcenter() with mavenCentral()")
                       modified = True
-                      
+
+                  # Bump compileSdkVersion from anything below 34 → 34
+                  new_text = re.sub(r'compileSdkVersion\s+\d+', 'compileSdkVersion 34', text)
+                  if new_text != text:
+                      text = new_text
+                      print("   ✅ Bumped compileSdkVersion to 34")
+                      modified = True
+
+                  # Also bump targetSdkVersion if present
+                  new_text = re.sub(r'targetSdkVersion\s+\d+', 'targetSdkVersion 34', text)
+                  if new_text != text:
+                      text = new_text
+                      print("   ✅ Bumped targetSdkVersion to 34")
+                      modified = True
+
                   # Ensure namespace is declared
                   if 'namespace' not in text and 'android {' in text:
                       text = text.replace('android {', 'android {\n    namespace "io.github.edufolly.flutterbluetoothserial"', 1)
                       print("   ✅ Added missing namespace")
                       modified = True
-                      
+
                   if modified:
                       with open(path, 'w') as f:
                           f.write(text)
