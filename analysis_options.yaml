@@ -1,0 +1,11 @@
+analyzer:
+  errors:
+    invalid_annotation_target: ignore
+  language:
+    strict-casts: false
+
+linter:
+  rules:
+    - prefer_const_constructors
+    - prefer_const_literals_to_create_immutables
+    - avoid_print: false
