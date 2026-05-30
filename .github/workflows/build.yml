@@ -73,6 +73,72 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Patch Third-Party Dependencies and Compatibility
+        run: |
+          python3 << 'PYEOF'
+          import os, glob
+
+          # 1. Patch gradle.properties to opt out of newDsl and builtInKotlin
+          properties_path = 'android/gradle.properties'
+          if os.path.exists(properties_path):
+              with open(properties_path, 'r') as f:
+                  props = f.read()
+              
+              new_props = props
+              if 'android.newDsl' not in props:
+                  new_props += '\nandroid.newDsl=false\n'
+              if 'android.builtInKotlin' not in props:
+                  new_props += 'android.builtInKotlin=false\n'
+                  
+              if new_props != props:
+                  with open(properties_path, 'w') as f:
+                      f.write(new_props)
+                  print(f"✅ Patched {properties_path}: disabled newDsl and builtInKotlin")
+          else:
+              print(f"⚠️ {properties_path} not found")
+
+          # 2. Search for and patch flutter_bluetooth_serial in the pub cache
+          home_dir = os.path.expanduser('~')
+          search_pattern = os.path.join(home_dir, '.pub-cache', 'hosted', '**', 'flutter_bluetooth_serial-*', 'android', 'build.gradle')
+          cache_files = glob.glob(search_pattern, recursive=True)
+          
+          if not cache_files:
+              print("⚠️ flutter_bluetooth_serial not found in pub cache. Searching all of .pub-cache...")
+              search_pattern_fallback = os.path.join(home_dir, '.pub-cache', '**', 'flutter_bluetooth_serial-*', 'android', 'build.gradle')
+              cache_files = glob.glob(search_pattern_fallback, recursive=True)
+
+          if not cache_files:
+              print("❌ Could not find flutter_bluetooth_serial in pub cache!")
+          else:
+              for path in cache_files:
+                  print(f"🔍 Found plugin build.gradle: {path}")
+                  with open(path, 'r') as f:
+                      text = f.read()
+                  
+                  modified = False
+                  
+                  # Replace jcenter() with mavenCentral()
+                  if 'jcenter()' in text:
+                      text = text.replace('jcenter()', 'mavenCentral()')
+                      print("   ✅ Replaced jcenter() with mavenCentral()")
+                      modified = True
+                      
+                  # Ensure namespace is declared
+                  if 'namespace' not in text and 'android {' in text:
+                      text = text.replace('android {', 'android {\n    namespace "io.github.edufolly.flutterbluetoothserial"', 1)
+                      print("   ✅ Added missing namespace")
+                      modified = True
+                      
+                  if modified:
+                      with open(path, 'w') as f:
+                          f.write(text)
+                      print(f"   🎉 Successfully patched {path}")
+                  else:
+                      print("   ℹ️ No patches needed")
+
+          print("🎉 Compatibility patching complete!")
+          PYEOF
+
       - name: Analyze code
         run: flutter analyze --no-fatal-infos || true
 
