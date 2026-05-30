@@ -28,11 +28,9 @@ jobs:
           channel: 'stable'
 
       - name: Generate Android project scaffold
-        working-directory: ./agv_controller
         run: flutter create --project-name agv_controller --org com.warehouse --platforms android .
 
       - name: Configure Android for Bluetooth
-        working-directory: ./agv_controller
         run: |
           python3 << 'PYEOF'
           import os, re
@@ -73,20 +71,17 @@ jobs:
           PYEOF
 
       - name: Install dependencies
-        working-directory: ./agv_controller
         run: flutter pub get
 
       - name: Analyze code
-        working-directory: ./agv_controller
         run: flutter analyze --no-fatal-infos || true
 
       - name: Build release APK
-        working-directory: ./agv_controller
         run: flutter build apk --release
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: AGV-Controller-APK
-          path: agv_controller/build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
