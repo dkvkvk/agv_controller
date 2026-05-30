@@ -104,16 +104,16 @@ jobs:
                   with open(app_gradle, 'r') as f:
                       text = f.read()
                   original = text
-                  # compileSdk / compileSdkVersion → 34
-                  text = re.sub(r'compileSdk\w*\s*[=:]\s*\d+', lambda m: re.sub(r'\d+', '34', m.group()), text)
-                  text = re.sub(r"flutter\.compileSdkVersion", "34", text)
-                  # targetSdk / targetSdkVersion → 34
-                  text = re.sub(r'targetSdk\w*\s*[=:]\s*\d+', lambda m: re.sub(r'\d+', '34', m.group()), text)
-                  text = re.sub(r"flutter\.targetSdkVersion", "34", text)
+                  # compileSdk / compileSdkVersion → 36
+                  text = re.sub(r'compileSdk\w*\s*[=:]\s*\d+', lambda m: re.sub(r'\d+', '36', m.group()), text)
+                  text = re.sub(r"flutter\.compileSdkVersion", "36", text)
+                  # targetSdk / targetSdkVersion → 36
+                  text = re.sub(r'targetSdk\w*\s*[=:]\s*\d+', lambda m: re.sub(r'\d+', '36', m.group()), text)
+                  text = re.sub(r"flutter\.targetSdkVersion", "36", text)
                   if text != original:
                       with open(app_gradle, 'w') as f:
                           f.write(text)
-                      print(f"✅ Patched {app_gradle} — compileSdk=34, targetSdk=34")
+                      print(f"✅ Patched {app_gradle} — compileSdk=36, targetSdk=36")
 
           # ── 3. Patch flutter_bluetooth_serial in the pub cache ──
           home_dir = os.path.expanduser('~')
@@ -141,18 +141,18 @@ jobs:
                       print("   ✅ Replaced jcenter() with mavenCentral()")
                       modified = True
 
-                  # Bump compileSdkVersion from anything below 34 → 34
-                  new_text = re.sub(r'compileSdkVersion\s+\d+', 'compileSdkVersion 34', text)
+                  # Bump compileSdkVersion → 36
+                  new_text = re.sub(r'compileSdkVersion\s+\d+', 'compileSdkVersion 36', text)
                   if new_text != text:
                       text = new_text
-                      print("   ✅ Bumped compileSdkVersion to 34")
+                      print("   ✅ Bumped compileSdkVersion to 36")
                       modified = True
 
                   # Also bump targetSdkVersion if present
-                  new_text = re.sub(r'targetSdkVersion\s+\d+', 'targetSdkVersion 34', text)
+                  new_text = re.sub(r'targetSdkVersion\s+\d+', 'targetSdkVersion 36', text)
                   if new_text != text:
                       text = new_text
-                      print("   ✅ Bumped targetSdkVersion to 34")
+                      print("   ✅ Bumped targetSdkVersion to 36")
                       modified = True
 
                   # Ensure namespace is declared
