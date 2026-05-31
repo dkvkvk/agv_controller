@@ -128,18 +128,28 @@ jobs:
                   break
 
           if root_gradle:
+              is_kts = root_gradle.endswith('.kts')
               with open(root_gradle, 'a') as f:
                   f.write('\n// Force all subprojects to use compileSdk 36\n')
-                  f.write('subprojects {\n')
-                  f.write('    afterEvaluate { project ->\n')
-                  f.write('        if (project.hasProperty("android")) {\n')
-                  f.write('            project.android {\n')
-                  f.write('                compileSdk = 36\n')
-                  f.write('            }\n')
-                  f.write('        }\n')
-                  f.write('    }\n')
-                  f.write('}\n')
-              print(f"✅ Injected subprojects compileSdk=36 override into {root_gradle}")
+                  if is_kts:
+                      f.write('subprojects {\n')
+                      f.write('    afterEvaluate {\n')
+                      f.write('        extensions.findByType(com.android.build.gradle.BaseExtension::class.java)?.let {\n')
+                      f.write('            it.compileSdkVersion(36)\n')
+                      f.write('        }\n')
+                      f.write('    }\n')
+                      f.write('}\n')
+                  else:
+                      f.write('subprojects {\n')
+                      f.write('    afterEvaluate { project ->\n')
+                      f.write('        if (project.hasProperty("android")) {\n')
+                      f.write('            project.android {\n')
+                      f.write('                compileSdk = 36\n')
+                      f.write('            }\n')
+                      f.write('        }\n')
+                      f.write('    }\n')
+                      f.write('}\n')
+              print(f"✅ Injected subprojects compileSdk=36 override into {root_gradle} ({'KTS' if is_kts else 'Groovy'})")
           else:
               print("⚠️ No root build.gradle found in android/")
 
