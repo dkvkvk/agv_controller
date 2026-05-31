@@ -128,29 +128,18 @@ jobs:
                   break
 
           if root_gradle:
-              with open(root_gradle, 'r') as f:
-                  text = f.read()
-
-              override_block = '''
-// Force all subprojects to use compileSdk 36
-subprojects {
-    afterEvaluate { project ->
-        if (project.hasProperty("android")) {
-            project.android {
-                if (namespace == null) {
-                    namespace = project.group.toString() ?: "com.example.${project.name}"
-                }
-                compileSdk = 36
-            }
-        }
-    }
-}
-'''
-              if 'Force all subprojects' not in text:
-                  text += override_block
-                  with open(root_gradle, 'w') as f:
-                      f.write(text)
-                  print(f"✅ Injected subprojects compileSdk=36 override into {root_gradle}")
+              with open(root_gradle, 'a') as f:
+                  f.write('\n// Force all subprojects to use compileSdk 36\n')
+                  f.write('subprojects {\n')
+                  f.write('    afterEvaluate { project ->\n')
+                  f.write('        if (project.hasProperty("android")) {\n')
+                  f.write('            project.android {\n')
+                  f.write('                compileSdk = 36\n')
+                  f.write('            }\n')
+                  f.write('        }\n')
+                  f.write('    }\n')
+                  f.write('}\n')
+              print(f"✅ Injected subprojects compileSdk=36 override into {root_gradle}")
           else:
               print("⚠️ No root build.gradle found in android/")
 
