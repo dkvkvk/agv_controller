@@ -118,59 +118,60 @@ jobs:
                           f.write(text)
                       print(f"✅ Patched {app_gradle} — compileSdk=36, targetSdk=36")
 
-          # ── 3. Patch ALL plugins in the pub cache (compileSdk/targetSdk → 36) ──
+          # ── 3. Force ALL subprojects (plugins) to compileSdk 36 via Gradle ──
+          # This is more reliable than patching individual build.gradle files
+          root_gradle = None
+          for name in ['build.gradle', 'build.gradle.kts']:
+              path = os.path.join('android', name)
+              if os.path.exists(path):
+                  root_gradle = path
+                  break
+
+          if root_gradle:
+              with open(root_gradle, 'r') as f:
+                  text = f.read()
+
+              override_block = '''
+// Force all subprojects to use compileSdk 36
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            project.android {
+                if (namespace == null) {
+                    namespace = project.group.toString() ?: "com.example.${project.name}"
+                }
+                compileSdk = 36
+            }
+        }
+    }
+}
+'''
+              if 'Force all subprojects' not in text:
+                  text += override_block
+                  with open(root_gradle, 'w') as f:
+                      f.write(text)
+                  print(f"✅ Injected subprojects compileSdk=36 override into {root_gradle}")
+          else:
+              print("⚠️ No root build.gradle found in android/")
+
+          # ── 4. Patch flutter_bluetooth_serial specifically (jcenter + namespace) ──
           home_dir = os.path.expanduser('~')
-
-          # Find all build.gradle files in pub cache plugins
-          all_gradle_files = []
-          for pattern in [
-              os.path.join(home_dir, '.pub-cache', 'hosted', '**', 'android', 'build.gradle'),
-              os.path.join(home_dir, '.pub-cache', 'hosted', '**', 'android', 'build.gradle.kts'),
-          ]:
-              all_gradle_files.extend(glob.glob(pattern, recursive=True))
-
-          print(f"🔍 Found {len(all_gradle_files)} plugin build.gradle files in pub cache")
-
-          for path in all_gradle_files:
+          bt_pattern = os.path.join(home_dir, '.pub-cache', '**', 'flutter_bluetooth_serial-*', 'android', 'build.gradle')
+          bt_files = glob.glob(bt_pattern, recursive=True)
+          for path in bt_files:
               with open(path, 'r') as f:
                   text = f.read()
-              original = text
               modified = False
-
-              # Bump compileSdkVersion / compileSdk → 36
-              new_text = re.sub(r'compileSdkVersion\s+\d+', 'compileSdkVersion 36', text)
-              if new_text != text:
-                  text = new_text
+              if 'jcenter()' in text:
+                  text = text.replace('jcenter()', 'mavenCentral()')
                   modified = True
-              new_text = re.sub(r'compileSdk\s*[=:]\s*\d+', lambda m: re.sub(r'\d+', '36', m.group()), text)
-              if new_text != text:
-                  text = new_text
+              if 'namespace' not in text and 'android {' in text:
+                  text = text.replace('android {', 'android {\n    namespace "io.github.edufolly.flutterbluetoothserial"', 1)
                   modified = True
-
-              # Bump targetSdkVersion / targetSdk → 36
-              new_text = re.sub(r'targetSdkVersion\s+\d+', 'targetSdkVersion 36', text)
-              if new_text != text:
-                  text = new_text
-                  modified = True
-              new_text = re.sub(r'targetSdk\s*[=:]\s*\d+', lambda m: re.sub(r'\d+', '36', m.group()), text)
-              if new_text != text:
-                  text = new_text
-                  modified = True
-
-              # flutter_bluetooth_serial specific: jcenter → mavenCentral
-              if 'flutter_bluetooth_serial' in path:
-                  if 'jcenter()' in text:
-                      text = text.replace('jcenter()', 'mavenCentral()')
-                      modified = True
-                  if 'namespace' not in text and 'android {' in text:
-                      text = text.replace('android {', 'android {\n    namespace "io.github.edufolly.flutterbluetoothserial"', 1)
-                      modified = True
-
               if modified:
                   with open(path, 'w') as f:
                       f.write(text)
-                  plugin_name = path.split('.pub-cache')[-1]
-                  print(f"   ✅ Patched: ...{plugin_name}")
+                  print(f"✅ Patched flutter_bluetooth_serial: {path}")
 
           print("🎉 Compatibility patching complete!")
           PYEOF
