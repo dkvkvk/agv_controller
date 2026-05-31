@@ -5,10 +5,12 @@ import 'package:provider/provider.dart';
 
 import 'models/agv_state.dart';
 import 'services/bluetooth_service.dart';
+import 'services/path_recorder_service.dart';
 import 'services/protocol_service.dart';
 import 'pages/connection_page.dart';
 import 'pages/control_page.dart';
 import 'pages/monitor_page.dart';
+import 'pages/path_page.dart';
 import 'pages/settings_page.dart';
 import 'pages/terminal_page.dart';
 
@@ -51,6 +53,7 @@ class AGVControllerApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => BluetoothService()),
         ChangeNotifierProvider(create: (_) => AGVState()),
+        ChangeNotifierProvider(create: (_) => PathRecorderService()),
         // ProtocolService bridges BT and State — created eagerly
         Provider<ProtocolService>(
           create: (ctx) => ProtocolService(
@@ -127,6 +130,7 @@ class _MainScreenState extends State<MainScreen> {
   static const _pages = <Widget>[
     ConnectionPage(),
     ControlPage(),
+    PathPage(),
     MonitorPage(),
     SettingsPage(),
     TerminalPage(),
@@ -156,6 +160,8 @@ class _MainScreenState extends State<MainScreen> {
                 icon: Icon(Icons.bluetooth), label: '连接'),
             BottomNavigationBarItem(
                 icon: Icon(Icons.gamepad), label: '控制'),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.route), label: '路径'),
             BottomNavigationBarItem(
                 icon: Icon(Icons.monitor_heart), label: '监控'),
             BottomNavigationBarItem(

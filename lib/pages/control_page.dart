@@ -4,8 +4,10 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../main.dart';
 import '../models/agv_state.dart';
 import '../services/bluetooth_service.dart';
+import '../services/path_recorder_service.dart';
 import '../services/protocol_service.dart';
 import '../widgets/joystick_widget.dart';
 
@@ -20,12 +22,14 @@ class _ControlPageState extends State<ControlPage> {
   double _speed = 500;
   String _currentCmd = 'STOP';
   Timer? _sendTimer;
+  Timer? _recordingTickTimer;
 
   // Last joystick direction
   double _joyDx = 0;
   double _joyDy = 0;
 
   ProtocolService get _proto => context.read<ProtocolService>();
+  PathRecorderService get _recorder => context.read<PathRecorderService>();
 
   void _onJoystickUpdate(double dx, double dy) {
     _joyDx = dx;
@@ -53,6 +57,7 @@ class _ControlPageState extends State<ControlPage> {
     final dist = sqrt(_joyDx * _joyDx + _joyDy * _joyDy);
     if (dist < 0.2) {
       _proto.stop();
+      _recorder.recordCommand('S');
       setState(() => _currentCmd = 'STOP');
       return;
     }
@@ -63,9 +68,11 @@ class _ControlPageState extends State<ControlPage> {
       // Vertical dominant → forward / backward
       if (_joyDy < 0) {
         _proto.forward(speed);
+        _recorder.recordCommand('F:$speed');
         setState(() => _currentCmd = 'FWD $speed');
       } else {
         _proto.backward(speed);
+        _recorder.recordCommand('B:$speed');
         setState(() => _currentCmd = 'BACK $speed');
       }
     } else {
@@ -73,9 +80,11 @@ class _ControlPageState extends State<ControlPage> {
       final gain = (_joyDx.abs() * 200).round().clamp(50, 500);
       if (_joyDx < 0) {
         _proto.turnLeft(speed, gain);
+        _recorder.recordCommand('L:$speed,$gain');
         setState(() => _currentCmd = 'LEFT $speed,$gain');
       } else {
         _proto.turnRight(speed, gain);
+        _recorder.recordCommand('R:$speed,$gain');
         setState(() => _currentCmd = 'RIGHT $speed,$gain');
       }
     }
@@ -84,13 +93,116 @@ class _ControlPageState extends State<ControlPage> {
   @override
   void dispose() {
     _sendTimer?.cancel();
+    _recordingTickTimer?.cancel();
     super.dispose();
+  }
+
+  void _startRecording() {
+    _recorder.startRecording();
+    // Tick timer to update the recording duration display
+    _recordingTickTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => setState(() {}),
+    );
+  }
+
+  void _stopRecording() {
+    _recordingTickTimer?.cancel();
+    _recordingTickTimer = null;
+    _showSaveDialog();
+  }
+
+  void _cancelRecording() {
+    _recordingTickTimer?.cancel();
+    _recordingTickTimer = null;
+    _recorder.cancelRecording();
+  }
+
+  void _showSaveDialog() {
+    final controller = TextEditingController(
+      text: '路径 ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+    );
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('保存路径', style: TextStyle(color: AppColors.textPrimary)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '已录制 ${_recorder.recordingCommandCount} 条指令',
+              style: const TextStyle(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: InputDecoration(
+                hintText: '输入路径名称',
+                hintStyle: const TextStyle(color: AppColors.textSecondary),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide:
+                      BorderSide(color: AppColors.primary.withOpacity(0.3)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.primary),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _recorder.cancelRecording();
+              Navigator.pop(ctx);
+            },
+            child: const Text('丢弃', style: TextStyle(color: AppColors.danger)),
+          ),
+          TextButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                final path = _recorder.stopRecording(name);
+                if (path != null) {
+                  _recorder.savePath(path);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('路径 "$name" 已保存'),
+                      backgroundColor: AppColors.success,
+                    ),
+                  );
+                }
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('保存', style: TextStyle(color: AppColors.primary)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatRecordingTime() {
+    final start = _recorder.recordingStartTime;
+    if (start == null) return '00:00';
+    final elapsed = DateTime.now().difference(start);
+    final minutes = elapsed.inMinutes.toString().padLeft(2, '0');
+    final seconds = (elapsed.inSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
   }
 
   @override
   Widget build(BuildContext context) {
     final bt = context.watch<BluetoothService>();
     final state = context.watch<AGVState>();
+    final recorder = context.watch<PathRecorderService>();
     const cyan = Color(0xFF00D4FF);
     const purple = Color(0xFF7C4DFF);
     const danger = Color(0xFFFF1744);
@@ -105,7 +217,12 @@ class _ControlPageState extends State<ControlPage> {
           children: [
             // ── Top status bar ──
             _statusBar(state, bt, cyan, purple, surface),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
+
+            // ── Recording bar ──
+            if (state.controlMode == 'manual')
+              _recordingBar(recorder, connected, cyan, surface),
+            const SizedBox(height: 6),
 
             // ── Current command ──
             Container(
@@ -328,6 +445,106 @@ class _ControlPageState extends State<ControlPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _recordingBar(PathRecorderService recorder, bool connected,
+      Color cyan, Color surface) {
+    final isRecording = recorder.isRecording;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: isRecording
+            ? AppColors.danger.withOpacity(0.08)
+            : surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isRecording
+              ? AppColors.danger.withOpacity(0.3)
+              : cyan.withOpacity(0.1),
+        ),
+      ),
+      child: isRecording
+          ? Row(
+              children: [
+                // Blinking red dot
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.3, end: 1.0),
+                  duration: const Duration(milliseconds: 600),
+                  builder: (_, opacity, __) => Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: AppColors.danger.withOpacity(opacity),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  onEnd: () => setState(() {}),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '录制中  ${_formatRecordingTime()}',
+                  style: const TextStyle(
+                    color: AppColors.danger,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${recorder.recordingCommandCount} 条',
+                  style: TextStyle(
+                    color: AppColors.danger.withOpacity(0.6),
+                    fontSize: 12,
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: _stopRecording,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.danger.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      '停止录制',
+                      style: TextStyle(
+                        color: AppColors.danger,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : GestureDetector(
+              onTap: connected ? _startRecording : null,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.fiber_manual_record,
+                      size: 16,
+                      color: connected
+                          ? AppColors.danger
+                          : AppColors.textSecondary),
+                  const SizedBox(width: 6),
+                  Text(
+                    '开始录制路径',
+                    style: TextStyle(
+                      color: connected
+                          ? AppColors.textPrimary
+                          : AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }
